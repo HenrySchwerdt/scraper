@@ -1,0 +1,105 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.20
+
+      - name: Build executable
+        run: |
+          GOOS=$(echo "${{ matrix.os }}" | cut -d '-' -f1)
+          GOARCH=amd64
+          EXT=""
+          if [ "$GOOS" == "windows" ]; then
+            EXT=".exe"
+          fi
+          go build -o scraper${EXT} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: scraper-${{ matrix.os }}
+          path: scraper${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: scraper-ubuntu-latest
+          path: ./artifacts/linux/
+      
+      - uses: actions/download-artifact@v3
+        with:
+          name: scraper-macos-latest
+          path: ./artifacts/macos/
+      
+      - uses: actions/download-artifact@v3
+        with:
+          name: scraper-windows-latest
+          path: ./artifacts/windows/
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            Release for ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset Linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/linux/scraper
+          asset_name: scraper-linux
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset MacOS
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/macos/scraper
+          asset_name: scraper-macos
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/windows/scraper.exe
+          asset_name: scraper-windows.exe
+          asset_content_type: application/octet-stream
